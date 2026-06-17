@@ -125,11 +125,106 @@ export function createTimelineUI(): TimelineUI {
     return bar;
   }
 
+  function buildMarkers(): { start: HTMLElement; end: HTMLElement; region: HTMLElement } {
+    const startMarker = document.createElement('div');
+    startMarker.setAttribute('data-svl-marker', 'start');
+    startMarker.style.cssText = `
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: ${ACCENT};
+      cursor: ew-resize;
+      z-index: 10;
+      display: none;
+    `;
+
+    const endMarker = document.createElement('div');
+    endMarker.setAttribute('data-svl-marker', 'end');
+    endMarker.style.cssText = `
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: ${ACCENT};
+      cursor: ew-resize;
+      z-index: 10;
+      display: none;
+    `;
+
+    const region = document.createElement('div');
+    region.setAttribute('data-svl-loop-region', '');
+    region.style.cssText = `
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: rgba(255,64,129,0.25);
+      z-index: 9;
+      display: none;
+    `;
+
+    return { start: startMarker, end: endMarker, region };
+  }
+
+  function setupDrag(
+    marker: HTMLElement,
+    type: 'start' | 'end',
+    getProgressBar: () => HTMLElement | null,
+    getVideoDuration: () => number,
+  ): void {
+    let dragging = false;
+
+    marker.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      dragging = true;
+      document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const bar = getProgressBar();
+      if (!bar) return;
+      const rect = bar.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const time = ratio * getVideoDuration();
+      callbacks.dragMarker.forEach((cb) => cb(type, time));
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (dragging) {
+        dragging = false;
+        document.body.style.userSelect = '';
+      }
+    });
+  }
+
   function inject(containerEl: HTMLElement): void {
     container = containerEl;
     const controls = buildControls();
     container.appendChild(controls);
     elements = [controls];
+
+    const progressBar = container.querySelector('.ytp-progress-bar') as HTMLElement | null;
+    if (progressBar) {
+      if (getComputedStyle(progressBar).position === 'static') {
+        progressBar.style.position = 'relative';
+      }
+      const markers = buildMarkers();
+      progressBar.appendChild(markers.start);
+      progressBar.appendChild(markers.region);
+      progressBar.appendChild(markers.end);
+
+      setupDrag(markers.start, 'start', () => progressBar, () => {
+        const video = document.querySelector('video.html5-main-video') as HTMLVideoElement | null;
+        return video?.duration ?? 0;
+      });
+      setupDrag(markers.end, 'end', () => progressBar, () => {
+        const video = document.querySelector('video.html5-main-video') as HTMLVideoElement | null;
+        return video?.duration ?? 0;
+      });
+
+      elements.push(markers.start, markers.region, markers.end);
+    }
   }
 
   function destroy(): void {
@@ -148,6 +243,35 @@ export function createTimelineUI(): TimelineUI {
     const display = container.querySelector('[data-svl-display="time"]');
     if (display) {
       display.textContent = `${formatTime(start)} — ${formatTime(end)}`;
+    }
+
+    const progressBar = container.querySelector('.ytp-progress-bar') as HTMLElement | null;
+    if (!progressBar) return;
+
+    const video = document.querySelector('video.html5-main-video') as HTMLVideoElement | null;
+    const duration = video?.duration ?? 0;
+    if (duration === 0) return;
+
+    const startRatio = start / duration;
+    const endRatio = end / duration;
+    const barWidth = progressBar.getBoundingClientRect().width;
+
+    const startMarker = progressBar.querySelector('[data-svl-marker="start"]') as HTMLElement | null;
+    const endMarker = progressBar.querySelector('[data-svl-marker="end"]') as HTMLElement | null;
+    const region = progressBar.querySelector('[data-svl-loop-region]') as HTMLElement | null;
+
+    if (startMarker) {
+      startMarker.style.display = '';
+      startMarker.style.left = `${Math.round(startRatio * barWidth)}px`;
+    }
+    if (endMarker) {
+      endMarker.style.display = '';
+      endMarker.style.left = `${Math.round(endRatio * barWidth)}px`;
+    }
+    if (region) {
+      region.style.display = '';
+      region.style.left = `${Math.round(startRatio * barWidth)}px`;
+      region.style.width = `${Math.round((endRatio - startRatio) * barWidth)}px`;
     }
   }
 
