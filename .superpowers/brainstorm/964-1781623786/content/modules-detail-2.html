@@ -1,0 +1,153 @@
+<h2>Module Details — Part 2: Storage + Messaging</h2>
+<p class="subtitle">Plus: state machine, error handling, and edge cases</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">Module 4: Storage Manager</div>
+    <div class="mockup-body" style="font-family:monospace; font-size:12px; line-height:1.6; color:#e0e0e0;">
+
+      <p style="color:#ffd54f; font-weight:700;">Interface:</p>
+      <div style="background:#1a1a2e; padding:12px; border-radius:6px; margin-bottom:12px;">
+        <span style="color:#64b5f6;">saveLoop(videoId, start, end)</span> → Promise&lt;void&gt;<br/>
+        <span style="color:#64b5f6;">loadLoop(videoId)</span> → Promise&lt;{start, end} | null&gt;<br/>
+        <span style="color:#64b5f6;">deleteLoop(videoId)</span> → Promise&lt;void&gt;<br/>
+        <span style="color:#64b5f6;">getAllLoops()</span> → Promise&lt;Record&lt;string, {start,end}&gt;&gt;
+      </div>
+
+      <p style="color:#ffd54f; font-weight:700;">Storage Schema (chrome.storage.local):</p>
+      <div style="background:#1a1a2e; padding:12px; border-radius:6px; margin-bottom:12px;">
+        {<br/>
+        &nbsp;&nbsp;<span style="color:#64b5f6;">"loops"</span>: {<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#ce93d8;">"dQw4w9WgXcQ"</span>: { start: 90.5, end: 225.3, savedAt: 1706000000 },<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#ce93d8;">"9bZkp7q19f0"</span>: { start: 30.0, end: 60.0, savedAt: 1706000500 }<br/>
+        &nbsp;&nbsp;}<br/>
+        }
+      </div>
+
+      <p style="color:#ffd54f; font-weight:700;">Design decisions:</p>
+      <ul style="padding-left:18px; color:#ccc;">
+        <li>Lưu qua Service Worker → tập trung logic, dễ debug</li>
+        <li>Key theo video ID → lookup O(1)</li>
+        <li>savedAt timestamp → cleanup policy sau này nếu cần (VD: xóa settings cũ hơn 6 tháng)</li>
+        <li>Auto-save sau mỗi lần set start/end → không cần nút Save thủ công</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">Module 5: Message Bus</div>
+    <div class="mockup-body" style="font-family:monospace; font-size:12px; line-height:1.6; color:#e0e0e0;">
+
+      <p style="color:#ffd54f; font-weight:700;">Message Protocol:</p>
+      <div style="background:#1a1a2e; padding:12px; border-radius:6px; margin-bottom:12px;">
+
+        <p style="color:#888; margin:0 0 8px 0;">// Content Script → Service Worker</p>
+        <div style="background:#0f3460; padding:8px; border-radius:4px; margin-bottom:10px;">
+          { type: <span style="color:#a5d6a7;">"LOOP_SAVE"</span>, payload: { videoId, start, end } }<br/>
+          { type: <span style="color:#a5d6a7;">"LOOP_LOAD"</span>, payload: { videoId } }<br/>
+          { type: <span style="color:#a5d6a7;">"LOOP_DELETE"</span>, payload: { videoId } }
+        </div>
+
+        <p style="color:#888; margin:0 0 8px 0;">// Service Worker → Content Script</p>
+        <div style="background:#1b5e20; padding:8px; border-radius:4px; margin-bottom:10px;">
+          { type: <span style="color:#a5d6a7;">"LOOP_LOADED"</span>, payload: { videoId, loop: {start,end} | null } }<br/>
+          { type: <span style="color:#a5d6a7;">"LOOP_SAVED"</span>, payload: { videoId, ok: boolean } }
+        </div>
+
+        <p style="color:#888; margin:0 0 8px 0;">// Content Script → Content Script (broadcast across tabs)</p>
+        <div style="background:#4a148c; padding:8px; border-radius:4px;">
+          { type: <span style="color:#a5d6a7;">"KEYBOARD_SHORTCUT"</span>, payload: { action: "toggle_loop"|"set_start"|"set_end" } }
+        </div>
+
+      </div>
+
+      <p style="color:#ffd54f; font-weight:700;">Error handling:</p>
+      <ul style="padding-left:18px; color:#ccc;">
+        <li>Timeout 3s cho message → fallback gracefully</li>
+        <li>SW bị terminated (idle) → re-send message, SW tự restart</li>
+        <li>Network error → không ảnh hưởng (local-only extension)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Loop State Machine</h3>
+  <div style="font-family:monospace; font-size:12px; line-height:1.8; color:#e0e0e0; background:#121212; padding:16px; border-radius:8px;">
+
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center;">
+      <span style="background:#1b5e20; padding:4px 12px; border-radius:3px;">IDLE</span>
+      <span style="color:#888;">→</span>
+      <span style="background:#e65100; padding:4px 12px; border-radius:3px;">READY <span style="color:#aaa; font-size:10px;">(có start+end)</span></span>
+      <span style="color:#888;">→</span>
+      <span style="background:#0d47a1; padding:4px 12px; border-radius:3px;">LOOPING</span>
+      <span style="color:#888;">→</span>
+      <span style="background:#4a148c; padding:4px 12px; border-radius:3px;">PAUSED <span style="color:#aaa; font-size:10px;">(ad/user-seek)</span></span>
+    </div>
+
+    <div style="margin-top:14px; color:#aaa; font-size:11px;">
+      IDLE: no loop points set<br/>
+      READY: both A and B set, not yet looping<br/>
+      LOOPING: actively looping A→B<br/>
+      PAUSED: loop temporarily suspended (ad, user manual seek)<br/>
+      Transitions triggered by: user clicks, loop engine detects out-of-range, ad events
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Project Structure</h3>
+  <div style="font-family:monospace; font-size:12px; line-height:1.5; color:#e0e0e0; background:#121212; padding:16px; border-radius:8px;">
+    src/<br/>
+    ├── content/<br/>
+    │   ├── <span style="color:#ffd54f;">index.ts</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;">// entry, wires 4 modules</span><br/>
+    │   ├── <span style="color:#ffd54f;">youtube-detector.ts</span><br/>
+    │   ├── <span style="color:#ffd54f;">loop-engine.ts</span><br/>
+    │   ├── <span style="color:#ffd54f;">timeline-ui.ts</span><br/>
+    │   └── <span style="color:#ffd54f;">message-bus.ts</span><br/>
+    ├── sw/<br/>
+    │   └── <span style="color:#ffd54f;">index.ts</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;">// storage handler + keyboard commands</span><br/>
+    ├── shared/<br/>
+    │   └── <span style="color:#ffd54f;">types.ts</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#888;">// message types, loop config</span><br/>
+    ├── manifest.json<br/>
+    └── assets/<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;└── icons/
+  </div>
+</div>
+
+<div class="section">
+  <h3>Tech Stack</h3>
+  <div style="display:flex; gap:16px; flex-wrap:wrap;">
+    <div style="flex:1; min-width:150px; background:#1a1a2e; padding:12px; border-radius:6px; border-top:3px solid #3178c6;">
+      <strong>TypeScript</strong><br/><span style="color:#aaa; font-size:12px;">Type safety across modules</span>
+    </div>
+    <div style="flex:1; min-width:150px; background:#1a1a2e; padding:12px; border-radius:6px; border-top:3px solid #ffd54f;">
+      <strong>ESBuild</strong><br/><span style="color:#aaa; font-size:12px;">Fast bundling, tree shaking</span>
+    </div>
+    <div style="flex:1; min-width:150px; background:#1a1a2e; padding:12px; border-radius:6px; border-top:3px solid #66bb6a;">
+      <strong>Vitest</strong><br/><span style="color:#aaa; font-size:12px;">Unit tests per module</span>
+    </div>
+    <div style="flex:1; min-width:150px; background:#1a1a2e; padding:12px; border-radius:6px; border-top:3px solid #e94560;">
+      <strong>Playwright</strong><br/><span style="color:#aaa; font-size:12px;">E2E on YouTube</span>
+    </div>
+  </div>
+</div>
+
+<h3>Look right so far?</h3>
+
+<div class="options">
+  <div class="option" data-choice="ok" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>OK — viết spec document</h3>
+    </div>
+  </div>
+  <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="letter">✗</div>
+    <div class="content">
+      <h3>Cần chỉnh sửa</h3>
+    </div>
+  </div>
+</div>

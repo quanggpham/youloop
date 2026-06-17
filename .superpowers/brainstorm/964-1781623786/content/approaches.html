@@ -1,0 +1,80 @@
+<h2>3 Architectural Approaches</h2>
+<p class="subtitle">Smart Video Loop — YouTube Chrome Extension</p>
+
+<div class="section">
+  <h3>Recap: What we're building</h3>
+  <div class="pros-cons">
+    <div class="pros"><h4>Scope confirmed</h4><ul>
+      <li>Chrome extension, YouTube only</li>
+      <li>Set Start/End via buttons + draggable timeline markers</li>
+      <li>Continuous A→B→A→B looping</li>
+      <li>Save loop points per video (local storage)</li>
+    </ul></div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="approach-a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Content Script Only</h3>
+      <p><strong>Đơn giản nhất.</strong> Một content script duy nhất inject vào youtube.com, trực tiếp thao tác với YouTube player API (seek, getCurrentTime, setLoop). UI được tạo bằng DOM injection vào player controls.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Code ít, triển khai nhanh</li>
+          <li>Không cần background service worker</li>
+          <li>Trực tiếp tương tác YouTube player → ít delay</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Khó scale nếu sau này thêm platform khác</li>
+          <li>Storage logic nằm chung → khó test riêng</li>
+          <li>Ít tách biệt giữa UI và logic loop</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="approach-b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Split Architecture (Recommended)</h3>
+      <p><strong>Content Script + Service Worker.</strong> Content script lo UI + tương tác DOM/player. Service worker lo persistence (chrome.storage.local) và coordination. Giao tiếp qua chrome.runtime messaging.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Tách biệt rõ: UI ↔ Logic ↔ Storage</li>
+          <li>Dễ test từng phần riêng biệt</li>
+          <li>Service worker có thể xử lý thêm tính năng sau (keyboard shortcuts, notifications)</li>
+          <li>Theo đúng best practices của Chrome Extension Manifest V3</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Cần boilerplate messaging giữa content script và SW</li>
+          <li>Phức tạp hơn một chút so với approach A</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="approach-c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Micro-Modules Architecture</h3>
+      <p><strong>Content Script + Service Worker + nhiều module nhỏ.</strong> Chia nhỏ thành các module: loop-engine, timeline-ui, storage-manager, youtube-detector. Mỗi module có interface rõ ràng.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Codebase rất sạch, dễ maintain</li>
+          <li>Dễ mở rộng thêm platform hoặc engine khác</li>
+          <li>Unit test dễ dàng cho từng module</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Over-engineering cho MVP</li>
+          <li>Build step có thể cần (bundler)</li>
+          <li>Thời gian phát triển ban đầu lâu hơn</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <p class="subtitle">Recommendation: <strong>B</strong> — đủ sạch để maintain, đủ đơn giản để ship nhanh, dễ upgrade lên C nếu cần sau này.</p>
+</div>

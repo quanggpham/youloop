@@ -1,0 +1,122 @@
+<h2>Module Details — Part 1: Core Modules</h2>
+<p class="subtitle">Interfaces, responsibilities, and interactions</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">Module 1: YouTube Detector</div>
+    <div class="mockup-body" style="font-family:monospace; font-size:12px; line-height:1.6; color:#e0e0e0;">
+
+      <p style="color:#ffd54f; font-weight:700;">Interface:</p>
+      <div style="background:#1a1a2e; padding:12px; border-radius:6px; margin-bottom:12px;">
+        <span style="color:#64b5f6;">isWatchPage()</span> → boolean<br/>
+        <span style="color:#64b5f6;">getVideoId()</span> → string | null<br/>
+        <span style="color:#64b5f6;">onPageChange(callback)</span> → cleanup<br/>
+        <span style="color:#64b5f6;">waitForPlayer()</span> → Promise&lt;HTMLVideoElement&gt;
+      </div>
+
+      <p style="color:#ffd54f; font-weight:700;">Responsibility:</p>
+      <ul style="padding-left:18px; color:#ccc;">
+        <li>Phát hiện SPA navigation của YouTube (YouTube không reload page khi chuyển video)</li>
+        <li>Extract video ID từ URL hoặc DOM</li>
+        <li>Đợi player element xuất hiện (YouTube load động)</li>
+        <li>Signal lifecycle: video-started, video-changed, player-unavailable</li>
+      </ul>
+
+      <p style="color:#ffd54f; margin-top:12px; font-weight:700;">Edge Cases:</p>
+      <ul style="padding-left:18px; color:#ccc;">
+        <li>YouTube Shorts → không inject (khác cấu trúc DOM)</li>
+        <li>Embedded player (youtube.com/embed/*) → có hỗ trợ</li>
+        <li>Playlist autoplay → detect khi video ID thay đổi</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">Module 2: Loop Engine</div>
+    <div class="mockup-body" style="font-family:monospace; font-size:12px; line-height:1.6; color:#e0e0e0;">
+
+      <p style="color:#ffd54f; font-weight:700;">Interface:</p>
+      <div style="background:#1a1a2e; padding:12px; border-radius:6px; margin-bottom:12px;">
+        <span style="color:#64b5f6;">setLoop(startSec, endSec)</span> → void<br/>
+        <span style="color:#64b5f6;">enable()</span> / <span style="color:#64b5f6;">disable()</span> → void<br/>
+        <span style="color:#64b5f6;">isActive()</span> → boolean<br/>
+        <span style="color:#64b5f6;">getLoopPoints()</span> → { start, end } | null<br/>
+        <span style="color:#64b5f6;">onLoop(callback)</span> → cleanup&nbsp;&nbsp;<em style="color:#888;">// fires on each A→B restart</em>
+      </div>
+
+      <p style="color:#ffd54f; font-weight:700;">Loop Algorithm:</p>
+      <div style="background:#1a1a2e; padding:12px; border-radius:6px; margin-bottom:12px;">
+        <span style="color:#888;">// Core loop — runs via rAF when active</span><br/>
+        <span style="color:#ce93d8;">function</span> <span style="color:#64b5f6;">tick</span>() {<br/>
+        &nbsp;&nbsp;<span style="color:#ce93d8;">const</span> t = player.currentTime;<br/>
+        &nbsp;&nbsp;<span style="color:#ce93d8;">if</span> (t >= endSec || t &lt; startSec) {<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;player.currentTime = startSec;&nbsp;&nbsp;<em style="color:#888;">// seamless seek</em><br/>
+        &nbsp;&nbsp;}<br/>
+        &nbsp;&nbsp;<span style="color:#ce93d8;">if</span> (isEnabled) requestAnimationFrame(tick);<br/>
+        }
+      </div>
+
+      <p style="color:#ffd54f; font-weight:700;">Edge Cases:</p>
+      <ul style="padding-left:18px; color:#ccc;">
+        <li>User manually seeks outside loop range → tạm thời cho phép, không force back</li>
+        <li>Video ended naturally → tự seek về start và play</li>
+        <li>Ad playing → tạm dừng loop, resume sau khi ad kết thúc</li>
+        <li>start > end (user nhập sai) → tự động hoán đổi hoặc báo lỗi</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">Module 3: Timeline UI</div>
+    <div class="mockup-body" style="font-family:monospace; font-size:12px; line-height:1.6; color:#e0e0e0;">
+
+      <p style="color:#ffd54f; font-weight:700;">Interface:</p>
+      <div style="background:#1a1a2e; padding:12px; border-radius:6px; margin-bottom:12px;">
+        <span style="color:#64b5f6;">inject()</span> → void<br/>
+        <span style="color:#64b5f6;">destroy()</span> → void<br/>
+        <span style="color:#64b5f6;">updateMarkers(start, end)</span> → void<br/>
+        <span style="color:#64b5f6;">onSetStart(cb)</span> / <span style="color:#64b5f6;">onSetEnd(cb)</span> → cleanup<br/>
+        <span style="color:#64b5f6;">onToggleLoop(cb)</span> → cleanup<br/>
+        <span style="color:#64b5f6;">onDragMarker(type, cb)</span> → cleanup<br/>
+      </div>
+
+      <p style="color:#ffd54f; font-weight:700;">UI Elements (injected into YouTube player):</p>
+      <div style="background:#1a1a2e; padding:12px; border-radius:6px; margin-bottom:12px;">
+        <span style="color:#4fc3f7;">[A↻B]</span> Toggle Loop button — next to YouTube controls<br/>
+        <span style="color:#4fc3f7;">[⏺ Set A]</span> Set Start button — captures current video time<br/>
+        <span style="color:#4fc3f7;">[⏹ Set B]</span> Set End button — captures current video time<br/>
+        <span style="color:#4fc3f7;">▎▎A ▁▁▁▁▁▁▁▁▁▁ B▎▎</span> Markers on progress bar<br/>
+        <span style="color:#4fc3f7;">[1:30 — 3:45]</span> Time display — shows current loop range
+      </div>
+
+      <p style="color:#ffd54f; font-weight:700;">Visual Style:</p>
+      <ul style="padding-left:18px; color:#ccc;">
+        <li>Màu accent: <span style="color:#ff4081;">#FF4081</span> (pink) — nổi bật trên nền đỏ YouTube</li>
+        <li>Marker trên timeline: 2 thanh dọc mỏng, kéo được</li>
+        <li>Loop region trên progress bar: highlight màu giữa 2 marker</li>
+        <li>Button: icon đơn giản, tooltip rõ ràng</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h3>Part 2 tiếp theo: Storage Manager + Message Bus</h3>
+
+<div class="options">
+  <div class="option" data-choice="ok" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Các module này ổn — tiếp tục Part 2</h3>
+    </div>
+  </div>
+  <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="letter">✗</div>
+    <div class="content">
+      <h3>Cần chỉnh sửa</h3>
+    </div>
+  </div>
+</div>
