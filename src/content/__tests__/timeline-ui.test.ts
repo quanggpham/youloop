@@ -29,7 +29,7 @@ describe('TimelineUI', () => {
 
     const toggle = container.querySelector('[data-svl-action="toggle"]');
     expect(toggle).not.toBeNull();
-    expect(toggle?.getAttribute('title')).toBe('Toggle Loop');
+    expect(toggle?.getAttribute('title')).toContain('Toggle Loop');
     ui.destroy();
   });
 

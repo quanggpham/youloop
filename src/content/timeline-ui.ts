@@ -9,7 +9,10 @@ export interface TimelineUI {
   onDragMarker(type: 'start' | 'end', cb: (time: number) => void): () => void;
 }
 
-const ACCENT = '#FF4081';
+// YouTube-native color palette
+const YT_RED = 'rgb(255, 0, 0)';
+const YT_WHITE = '#FFFFFF';
+const YT_BG = 'rgba(0, 0, 0, 0.8)';
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -20,6 +23,7 @@ function formatTime(seconds: number): string {
 export function createTimelineUI(): TimelineUI {
   let container: HTMLElement | null = null;
   let elements: HTMLElement[] = [];
+  let dragCleanups: Array<() => void> = [];
   const callbacks = {
     setStart: new Set<(t: number) => void>(),
     setEnd: new Set<(t: number) => void>(),
@@ -36,45 +40,53 @@ export function createTimelineUI(): TimelineUI {
     const bar = document.createElement('div');
     bar.setAttribute('data-svl-controls', '');
     bar.style.cssText = `
+      position: absolute;
+      top: 10px;
+      left: 12px;
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 6px 14px;
-      font-family: 'YouTube Sans', 'Roboto', sans-serif;
+      gap: 8px;
+      padding: 5px 12px;
+      font-family: 'YouTube Sans', 'Roboto', Arial, sans-serif;
       font-size: 13px;
-      color: #fff;
-      background: rgba(0,0,0,0.4);
-      border-radius: 4px;
+      color: ${YT_WHITE};
+      background: ${YT_BG};
+      border-radius: 8px;
       user-select: none;
+      z-index: 2000;
+      pointer-events: auto;
     `;
 
+    // Toggle button
     const toggle = document.createElement('button');
     toggle.setAttribute('data-svl-button', '');
     toggle.setAttribute('data-svl-action', 'toggle');
-    toggle.title = 'Toggle Loop';
+    toggle.title = 'Toggle Loop (Ctrl+Shift+L)';
     toggle.style.cssText = `
       background: none;
-      border: 1px solid ${ACCENT};
-      color: #fff;
+      border: 2px solid ${YT_RED};
+      color: ${YT_WHITE};
       border-radius: 4px;
       padding: 4px 12px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 13px;
       font-family: inherit;
+      font-weight: 600;
       transition: background 0.15s ease, color 0.15s ease;
     `;
-    toggle.textContent = 'A↻ B';
+    toggle.textContent = 'A↻B';
     toggle.addEventListener('click', () => callbacks.toggleLoop.forEach((cb) => cb()));
     bar.appendChild(toggle);
 
+    // Set A button
     const setA = document.createElement('button');
     setA.setAttribute('data-svl-button', '');
     setA.setAttribute('data-svl-action', 'set-start');
-    setA.title = 'Set Loop Start (A)';
+    setA.title = 'Set Loop Start (Ctrl+Shift+A)';
     setA.style.cssText = `
       background: none;
-      border: 1px solid ${ACCENT};
-      color: #fff;
+      border: 2px solid rgba(255,255,255,0.5);
+      color: ${YT_WHITE};
       border-radius: 4px;
       padding: 4px 10px;
       cursor: pointer;
@@ -89,14 +101,15 @@ export function createTimelineUI(): TimelineUI {
     });
     bar.appendChild(setA);
 
+    // Set B button
     const setB = document.createElement('button');
     setB.setAttribute('data-svl-button', '');
     setB.setAttribute('data-svl-action', 'set-end');
-    setB.title = 'Set Loop End (B)';
+    setB.title = 'Set Loop End (Ctrl+Shift+B)';
     setB.style.cssText = `
       background: none;
-      border: 1px solid ${ACCENT};
-      color: #fff;
+      border: 2px solid rgba(255,255,255,0.5);
+      color: ${YT_WHITE};
       border-radius: 4px;
       padding: 4px 10px;
       cursor: pointer;
@@ -111,46 +124,89 @@ export function createTimelineUI(): TimelineUI {
     });
     bar.appendChild(setB);
 
+    // Time display
     const timeDisplay = document.createElement('span');
     timeDisplay.setAttribute('data-svl-display', 'time');
     timeDisplay.style.cssText = `
-      color: ${ACCENT};
+      color: ${YT_WHITE};
       font-weight: 600;
       font-family: 'Roboto Mono', monospace;
       font-size: 13px;
+      min-width: 100px;
     `;
-    timeDisplay.textContent = '—: — — —: —';
+    timeDisplay.textContent = '—:— — —:—';
     bar.appendChild(timeDisplay);
 
     return bar;
   }
 
-  function buildMarkers(): { start: HTMLElement; end: HTMLElement; region: HTMLElement } {
-    const startMarker = document.createElement('div');
-    startMarker.setAttribute('data-svl-marker', 'start');
-    startMarker.style.cssText = `
+  function buildMarkers(): { wrapper: HTMLElement; start: HTMLElement; end: HTMLElement; region: HTMLElement } {
+    // Wrapper to contain all marker elements
+    const wrapper = document.createElement('div');
+    wrapper.setAttribute('data-svl-marker-wrapper', '');
+    wrapper.style.cssText = `
       position: absolute;
       top: 0;
+      left: 0;
+      right: 0;
       bottom: 0;
-      width: 3px;
-      background: ${ACCENT};
-      cursor: ew-resize;
-      z-index: 10;
-      display: none;
+      z-index: 50;
+      pointer-events: none;
     `;
 
-    const endMarker = document.createElement('div');
-    endMarker.setAttribute('data-svl-marker', 'end');
-    endMarker.style.cssText = `
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      width: 3px;
-      background: ${ACCENT};
-      cursor: ew-resize;
-      z-index: 10;
-      display: none;
-    `;
+    function makeMarker(attr: string, title: string): HTMLElement {
+      const container = document.createElement('div');
+      container.setAttribute('data-svl-marker', attr);
+      container.title = title;
+      // Invisible wide hitbox (20px) so it's easy to grab, centered on the visual line
+      container.style.cssText = `
+        position: absolute;
+        top: -10px;
+        bottom: -10px;
+        width: 20px;
+        margin-left: -10px;
+        cursor: ew-resize;
+        display: none;
+        pointer-events: auto;
+        z-index: 51;
+      `;
+
+      const line = document.createElement('div');
+      line.style.cssText = `
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        top: 10px;
+        bottom: 10px;
+        width: 3px;
+        background: ${YT_RED};
+        border-radius: 2px;
+        pointer-events: none;
+      `;
+      container.appendChild(line);
+
+      // Large handle circle below the progress bar
+      const handle = document.createElement('div');
+      handle.style.cssText = `
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: -8px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: ${YT_RED};
+        border: 2px solid ${YT_WHITE};
+        box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+        pointer-events: none;
+      `;
+      container.appendChild(handle);
+
+      return container;
+    }
+
+    const startMarker = makeMarker('start', 'Loop Start — drag to adjust');
+    const endMarker = makeMarker('end', 'Loop End — drag to adjust');
 
     const region = document.createElement('div');
     region.setAttribute('data-svl-loop-region', '');
@@ -158,12 +214,13 @@ export function createTimelineUI(): TimelineUI {
       position: absolute;
       top: 0;
       bottom: 0;
-      background: rgba(255,64,129,0.25);
-      z-index: 9;
+      background: rgba(255,0,0,0.2);
+      z-index: 49;
       display: none;
+      pointer-events: none;
     `;
 
-    return { start: startMarker, end: endMarker, region };
+    return { wrapper, start: startMarker, end: endMarker, region };
   }
 
   function setupDrag(
@@ -171,31 +228,48 @@ export function createTimelineUI(): TimelineUI {
     type: 'start' | 'end',
     getProgressBar: () => HTMLElement | null,
     getVideoDuration: () => number,
-  ): void {
-    let dragging = false;
-
-    marker.addEventListener('mousedown', (e) => {
+  ): () => void {
+    function onDown(e: MouseEvent) {
       e.preventDefault();
-      dragging = true;
-      document.body.style.userSelect = 'none';
-    });
+      e.stopPropagation();
+      // Lock ALL mouse events to this element until mouseup — YouTube can't steal them
+      marker.setPointerCapture(e.pointerId);
+      marker.style.zIndex = '60'; // bring to front while dragging
 
-    document.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
       const bar = getProgressBar();
       if (!bar) return;
       const rect = bar.getBoundingClientRect();
       const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
       const time = ratio * getVideoDuration();
       callbacks.dragMarker.forEach((cb) => cb(type, time));
-    });
+    }
 
-    document.addEventListener('mouseup', () => {
-      if (dragging) {
-        dragging = false;
-        document.body.style.userSelect = '';
-      }
-    });
+    function onMove(e: MouseEvent) {
+      // setPointerCapture means we get events even outside the element
+      const bar = getProgressBar();
+      if (!bar) return;
+      const rect = bar.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const time = ratio * getVideoDuration();
+      callbacks.dragMarker.forEach((cb) => cb(type, time));
+    }
+
+    function onUp(e: MouseEvent) {
+      marker.releasePointerCapture(e.pointerId);
+      marker.style.zIndex = '51'; // restore
+    }
+
+    marker.addEventListener('pointerdown', onDown);
+    marker.addEventListener('pointermove', onMove);
+    marker.addEventListener('pointerup', onUp);
+    marker.addEventListener('lostpointercapture', onUp);
+
+    return () => {
+      marker.removeEventListener('pointerdown', onDown);
+      marker.removeEventListener('pointermove', onMove);
+      marker.removeEventListener('pointerup', onUp);
+      marker.removeEventListener('lostpointercapture', onUp);
+    };
   }
 
   function inject(containerEl: HTMLElement): void {
@@ -204,30 +278,44 @@ export function createTimelineUI(): TimelineUI {
     container.appendChild(controls);
     elements = [controls];
 
-    const progressBar = container.querySelector('.ytp-progress-bar') as HTMLElement | null;
+    // Find the progress bar — try multiple selectors since YouTube's DOM changes
+    const progressBar = document.querySelector('.ytp-progress-bar') as HTMLElement | null
+      || container.querySelector('.ytp-progress-bar') as HTMLElement | null;
+
     if (progressBar) {
       if (getComputedStyle(progressBar).position === 'static') {
         progressBar.style.position = 'relative';
       }
       const markers = buildMarkers();
-      progressBar.appendChild(markers.start);
-      progressBar.appendChild(markers.region);
-      progressBar.appendChild(markers.end);
+      // Append wrapper first, then markers and region into wrapper
+      progressBar.appendChild(markers.wrapper);
+      markers.wrapper.appendChild(markers.region);
+      markers.wrapper.appendChild(markers.start);
+      markers.wrapper.appendChild(markers.end);
 
-      setupDrag(markers.start, 'start', () => progressBar, () => {
+      const cleanup1 = setupDrag(markers.start, 'start', () => {
+        return document.querySelector('.ytp-progress-bar') as HTMLElement | null
+          || container!.querySelector('.ytp-progress-bar') as HTMLElement | null;
+      }, () => {
         const video = document.querySelector('video.html5-main-video') as HTMLVideoElement | null;
         return video?.duration ?? 0;
       });
-      setupDrag(markers.end, 'end', () => progressBar, () => {
+      const cleanup2 = setupDrag(markers.end, 'end', () => {
+        return document.querySelector('.ytp-progress-bar') as HTMLElement | null
+          || container!.querySelector('.ytp-progress-bar') as HTMLElement | null;
+      }, () => {
         const video = document.querySelector('video.html5-main-video') as HTMLVideoElement | null;
         return video?.duration ?? 0;
       });
 
-      elements.push(markers.start, markers.region, markers.end);
+      dragCleanups = [cleanup1, cleanup2];
+      elements.push(markers.wrapper); // wrapper contains all marker elements
     }
   }
 
   function destroy(): void {
+    dragCleanups.forEach((fn) => fn());
+    dragCleanups = [];
     elements.forEach((el) => el.remove());
     elements = [];
     container = null;
@@ -245,7 +333,8 @@ export function createTimelineUI(): TimelineUI {
       display.textContent = `${formatTime(start)} — ${formatTime(end)}`;
     }
 
-    const progressBar = container.querySelector('.ytp-progress-bar') as HTMLElement | null;
+    const progressBar = document.querySelector('.ytp-progress-bar') as HTMLElement | null
+      || container.querySelector('.ytp-progress-bar') as HTMLElement | null;
     if (!progressBar) return;
 
     const video = document.querySelector('video.html5-main-video') as HTMLVideoElement | null;
@@ -279,8 +368,9 @@ export function createTimelineUI(): TimelineUI {
     if (!container) return;
     const toggle = container.querySelector('[data-svl-action="toggle"]') as HTMLElement | null;
     if (toggle) {
-      toggle.style.background = active ? ACCENT : 'none';
-      toggle.style.color = active ? '#000' : '#fff';
+      toggle.style.background = active ? YT_RED : 'none';
+      toggle.style.borderColor = active ? YT_RED : YT_RED;
+      toggle.style.color = active ? YT_WHITE : YT_WHITE;
     }
   }
 

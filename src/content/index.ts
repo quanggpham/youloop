@@ -110,9 +110,11 @@ async function init(): Promise<void> {
     }
   });
 
-  // Handle SPA navigation — cleanup and re-init
-  const cleanupNavigation = detector.onPageChange(() => {
-    console.log('[SmartVideoLoop] Video changed, cleaning up');
+  // Handle SPA navigation — cleanup and re-init (only when video ID actually changes)
+  let currentVideoId = videoId;
+  const cleanupNavigation = detector.onPageChange((newVideoId) => {
+    if (newVideoId === currentVideoId) return; // ignore same-video navigation events
+    console.log(`[SmartVideoLoop] Video changed: ${currentVideoId} → ${newVideoId}, cleaning up`);
     engine.disable();
     ui.destroy();
     cleanupNavigation();
