@@ -73,6 +73,62 @@ describe('LoopEngine', () => {
     });
   });
 
+  describe('getLoopPoints', () => {
+    it('returns a copy, not the internal reference', () => {
+      engine.setLoop(10, 30);
+      const a = engine.getLoopPoints()!;
+      a.start = 999;
+      const b = engine.getLoopPoints()!;
+      expect(b.start).toBe(10);
+    });
+  });
+
+  describe('pause/resume', () => {
+    it('resumes after pause', () => {
+      engine.setLoop(10, 30);
+      engine.enable();
+      expect(engine.isActive()).toBe(true);
+
+      engine.pause();
+      expect(engine.isActive()).toBe(false);
+
+      engine.resume();
+      expect(engine.isActive()).toBe(true);
+    });
+
+    it('resume is no-op when no loop points set', () => {
+      engine.resume();
+      expect(engine.isActive()).toBe(false);
+    });
+  });
+
+  describe('enable idempotent', () => {
+    it('calling enable twice does not create two rAF loops', () => {
+      engine.setLoop(10, 30);
+      engine.enable();
+      expect(engine.isActive()).toBe(true);
+      engine.enable(); // second call
+      expect(engine.isActive()).toBe(true); // still active, no crash
+    });
+  });
+
+  describe('setLoop edge cases', () => {
+    it('accepts zero start time', () => {
+      engine.setLoop(0, 30);
+      expect(engine.getLoopPoints()).toEqual({ start: 0, end: 30 });
+    });
+
+    it('accepts very small range', () => {
+      engine.setLoop(10, 10.1);
+      expect(engine.getLoopPoints()).toEqual({ start: 10, end: 10.1 });
+    });
+
+    it('handles auto-swap with zero', () => {
+      engine.setLoop(30, 0);
+      expect(engine.getLoopPoints()).toEqual({ start: 0, end: 30 });
+    });
+  });
+
   describe('looping behavior', () => {
     it('seeks to start when reaching end', () => {
       engine.setLoop(10, 30);
@@ -122,10 +178,17 @@ describe('LoopEngine', () => {
       const callback = vi.fn();
       engine.onLoop(callback);
 
+      // First loop: reach end → seek to start + fire callback
       video.currentTime = 20;
       vi.advanceTimersByTime(16);
       expect(callback).toHaveBeenCalledTimes(1);
 
+      // seekingTo guard polls until currentTime ≈ seek target.
+      // Simulate seek landing (browser async)
+      video.currentTime = 10;
+      vi.advanceTimersByTime(16); // tick sees seekingTo done → resume normal checks
+
+      // Play forward to end again
       video.currentTime = 20;
       vi.advanceTimersByTime(16);
       expect(callback).toHaveBeenCalledTimes(2);

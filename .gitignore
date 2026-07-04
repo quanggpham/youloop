@@ -1,3 +1,17 @@
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Dev tools
+.playwright-mcp/
+.superpowers/
+docs/superpowers/
+
+# Random files
+*.pdf
+*.mp3
+custom.md
+
+# Original large source icon
+assets/icons/icon.png
+assets/icons/46fd8aaa-8053-4ecd-8568-d5c328c0f798.png

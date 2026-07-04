@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YouLoop</title>
+<style>
+  body {
+    width: 260px;
+    padding: 16px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13px;
+    color: #222;
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .label {
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  .status {
+    font-size: 12px;
+    color: #888;
+    margin-top: 6px;
+    display: block;
+  }
+  .status.on {
+    color: #d00;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid #eee;
+    margin: 14px 0 12px;
+  }
+
+  .kofi {
+    display: block;
+    margin-top: 14px;
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+    text-decoration: none;
+    padding: 6px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+  }
+  .kofi:hover {
+    background: #f5f5f5;
+    color: #555;
+  }
+  .kofi span { color: #e00; }
+
+  /* checkbox toggle */
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle input {
+    display: none;
+  }
+  .knob {
+    width: 36px;
+    height: 20px;
+    background: #ccc;
+    border-radius: 10px;
+    position: relative;
+    transition: background 0.15s;
+  }
+  .knob::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.15s;
+  }
+  input:checked + .knob {
+    background: #d00;
+  }
+  input:checked + .knob::after {
+    transform: translateX(16px);
+  }
+</style>
+</head>
+<body>
+
+  <div class="row">
+    <span class="label">YouLoop</span>
+    <label class="toggle">
+      <input type="checkbox" id="toggleBtn">
+      <span class="knob"></span>
+    </label>
+  </div>
+
+  <span class="status" id="statusText">Loading...</span>
+
+  <hr>
+
+  <a class="kofi" href="https://ko-fi.com/dzungquangpham" target="_blank" rel="noopener">
+    &#9749; Buy me a <span>&#9829;</span> coffee
+  </a>
+
+  <script src="popup.js"></script>
+</body>
+</html>

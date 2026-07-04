@@ -7,7 +7,18 @@ interface AppState {
   loopActive: boolean;
 }
 
-async function init(): Promise<void> {
+let cleanupCurrent: Array<() => void> = [];
+let lastVideoId: string | null = null;
+let navTimeout: ReturnType<typeof setTimeout> | null = null;
+let extensionEnabled = true; // mirrors popup toggle
+
+function cleanup(): void {
+  cleanupCurrent.forEach((fn) => fn());
+  cleanupCurrent = [];
+}
+
+export async function init(): Promise<void> {
+  if (!extensionEnabled) return;
   const detector = createYouTubeDetector();
 
   // Only run on watch pages
@@ -59,6 +70,7 @@ async function init(): Promise<void> {
   }
 
   // Wire UI events → Engine + Storage
+
   ui.onSetStart((time) => {
     const existing = engine.getLoopPoints();
     engine.setLoop(time, existing?.end ?? video.duration);
@@ -95,14 +107,11 @@ async function init(): Promise<void> {
     }
   });
 
-  ui.onDragMarker((_type, time) => {
+  // onDragMarker signature: onDragMarker(type: 'start' | 'end', callback: (time: number) => void)
+  ui.onDragMarker('start', (time) => {
     const points = engine.getLoopPoints();
     if (!points) return;
-    if (_type === 'start') {
-      engine.setLoop(time, points.end);
-    } else {
-      engine.setLoop(points.start, time);
-    }
+    engine.setLoop(time, points.end);
     const updated = engine.getLoopPoints();
     if (updated) {
       ui.updateMarkers(updated.start, updated.end);
@@ -110,57 +119,98 @@ async function init(): Promise<void> {
     }
   });
 
-  // Handle SPA navigation — cleanup and re-init (only when video ID actually changes)
-  let currentVideoId = videoId;
-  const cleanupNavigation = detector.onPageChange((newVideoId) => {
-    if (newVideoId === currentVideoId) return; // ignore same-video navigation events
-    console.log(`[SmartVideoLoop] Video changed: ${currentVideoId} → ${newVideoId}, cleaning up`);
-    engine.disable();
-    ui.destroy();
-    cleanupNavigation();
-    // Re-init for new video
-    setTimeout(() => init(), 1000);
+  ui.onDragMarker('end', (time) => {
+    const points = engine.getLoopPoints();
+    if (!points) return;
+    engine.setLoop(points.start, time);
+    const updated = engine.getLoopPoints();
+    if (updated) {
+      ui.updateMarkers(updated.start, updated.end);
+      bus.saveLoop(videoId, updated.start, updated.end);
+    }
   });
 
-  // Handle video end (natural) — seek back to start if looping
-  video.addEventListener('ended', () => {
+  // Handle video end (natural) — seek back to start if looping.
+  // This is a fallback; the loop engine's rAF tick normally catches t >= end first.
+  // We wait for readyState >= 3 to avoid the YouTube loading spinner on seek.
+  function onVideoEnded(): void {
     if (state.loopActive && engine.getLoopPoints()) {
       const points = engine.getLoopPoints()!;
       video.currentTime = points.start;
-      video.play();
+      // Wait for buffer before playing to avoid loading spinner
+      function waitThenPlay(): void {
+        if (video.readyState >= 3) {
+          video.play().catch(() => {});
+          return;
+        }
+        if (video.paused) video.play().catch(() => {});
+        requestAnimationFrame(waitThenPlay);
+      }
+      waitThenPlay();
     }
-  });
+  }
+  video.addEventListener('ended', onVideoEnded);
+
+  cleanupCurrent = [
+    () => engine.disable(),
+    () => ui.destroy(),
+    () => video.removeEventListener('ended', onVideoEnded),
+  ];
+  lastVideoId = videoId;
 
   console.log('[SmartVideoLoop] Ready');
 }
 
-// Listen for keyboard shortcut messages from service worker
+// ── Messages from popup ─────────────────────────────
+// Keyboard shortcuts have been removed — users interact via mouse (buttons + drag markers).
 chrome.runtime.onMessage.addListener((message) => {
-  if ((message as { type: string }).type === 'KEYBOARD_SHORTCUT') {
-    const { action } = (message as { payload: { action: string } }).payload;
-    switch (action) {
-      case 'toggle_loop': {
-        const toggleBtn = document.querySelector('[data-svl-action="toggle"]') as HTMLElement | null;
-        toggleBtn?.click();
-        break;
-      }
-      case 'set_start': {
-        const setABtn = document.querySelector('[data-svl-action="set-start"]') as HTMLElement | null;
-        setABtn?.click();
-        break;
-      }
-      case 'set_end': {
-        const setBBtn = document.querySelector('[data-svl-action="set-end"]') as HTMLElement | null;
-        setBBtn?.click();
-        break;
-      }
+  const msg = message as { type: string; payload?: Record<string, unknown> };
+
+  if (msg.type === 'SET_ENABLED') {
+    const enabled = (msg.payload as { enabled: boolean }).enabled;
+    extensionEnabled = enabled;
+    console.log(`[SmartVideoLoop] Extension ${enabled ? 'enabled' : 'disabled'}`);
+
+    if (enabled) {
+      // Re-init on current page
+      cleanup();
+      init();
+    } else {
+      cleanup();
+      lastVideoId = null;
     }
   }
 });
 
-// Start when DOM is ready
-if (document.readyState === 'complete' || document.readyState === 'interactive') {
-  init();
-} else {
-  window.addEventListener('DOMContentLoaded', init);
+// Listen for SPA navigation — independent of init(), ensures we trigger on
+// first navigation from homepage → watch page (where init() would have been skipped).
+// Debounced: YouTube fires yt-navigate-finish multiple times per navigation.
+window.addEventListener('yt-navigate-finish', () => {
+  if (navTimeout) clearTimeout(navTimeout);
+  navTimeout = setTimeout(async () => {
+    navTimeout = null;
+    if (!extensionEnabled) return;
+    const detector = createYouTubeDetector();
+    if (!detector.isWatchPage()) return;
+    const id = detector.getVideoId();
+    if (!id) return;
+    if (id === lastVideoId) return; // ignore same-video navigation events
+
+    console.log(`[SmartVideoLoop] SPA navigation to watch page: ${id}`);
+    cleanup();
+    await init();
+  }, 300);
+});
+
+// Start when DOM is ready.
+// We wrap in a function so tests can mock chrome.* before it runs.
+export function start(): void {
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    init();
+  } else {
+    window.addEventListener('DOMContentLoaded', init);
+  }
 }
+
+// In production the module auto-starts. Tests import { start } and call it after mocking.
+start();

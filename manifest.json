@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Smart Video Loop",
+  "name": "YouLoop",
   "version": "1.0.0",
   "description": "Loop any segment of a YouTube video seamlessly",
   "permissions": ["storage"],
@@ -10,22 +10,12 @@
     "js": ["dist/content.js"],
     "run_at": "document_end"
   }],
+  "action": {
+    "default_popup": "dist/popup.html",
+    "default_title": "YouLoop"
+  },
   "background": {
     "service_worker": "dist/sw.js"
-  },
-  "commands": {
-    "toggle_loop": {
-      "suggested_key": { "default": "Ctrl+Shift+L" },
-      "description": "Toggle loop on/off"
-    },
-    "set_start": {
-      "suggested_key": { "default": "Ctrl+Shift+A" },
-      "description": "Set loop start point"
-    },
-    "set_end": {
-      "suggested_key": { "default": "Ctrl+Shift+B" },
-      "description": "Set loop end point"
-    }
   },
   "icons": {
     "16": "assets/icons/icon-16.png",

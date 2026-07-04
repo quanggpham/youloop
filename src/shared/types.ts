@@ -21,5 +21,11 @@ export type IncomingMessage =
   | { type: 'LOOP_LOADED'; payload: { videoId: string; loop: { start: number; end: number } | null } }
   | { type: 'LOOP_SAVED'; payload: { videoId: string; ok: boolean } };
 
+// Service Worker → Content Script (extension lifecycle)
+export type ExtensionMessage =
+  | { type: 'SET_ENABLED'; payload: { enabled: boolean } }
+  | { type: 'GET_ENABLED'; payload?: undefined }
+  | { type: 'ENABLED_STATE'; payload: { enabled: boolean } };
+
 // Internal lifecycle events (content script only)
 export type LifecycleEvent = 'video-started' | 'video-changed' | 'player-unavailable';

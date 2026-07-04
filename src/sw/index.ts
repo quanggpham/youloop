@@ -1,12 +1,12 @@
-import type { OutgoingMessage, IncomingMessage } from '../shared/types';
-import { handleSaveLoop, handleLoadLoop, handleDeleteLoop } from './storage';
+import type { OutgoingMessage, IncomingMessage, ExtensionMessage } from '../shared/types';
+import { handleSaveLoop, handleLoadLoop, handleDeleteLoop, handleGetEnabled, handleSetEnabled } from './storage';
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log('[SmartVideoLoop] Extension installed');
 });
 
 chrome.runtime.onMessage.addListener(
-  (message: OutgoingMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: IncomingMessage) => void) => {
+  (message: OutgoingMessage | ExtensionMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: IncomingMessage | { type: string; payload: Record<string, unknown> }) => void) => {
     (async () => {
       switch (message.type) {
         case 'LOOP_SAVE': {
@@ -34,6 +34,20 @@ chrome.runtime.onMessage.addListener(
           await handleDeleteLoop(videoId);
           break;
         }
+
+        case 'GET_ENABLED': {
+          const enabled = await handleGetEnabled();
+          sendResponse({
+            type: 'ENABLED_STATE',
+            payload: { enabled },
+          });
+          break;
+        }
+
+        case 'SET_ENABLED': {
+          await handleSetEnabled(message.payload.enabled);
+          break;
+        }
       }
     })();
 
@@ -41,11 +55,5 @@ chrome.runtime.onMessage.addListener(
   },
 );
 
-// Handle keyboard shortcuts
-chrome.commands.onCommand.addListener((command) => {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]?.id) {
-      chrome.tabs.sendMessage(tabs[0].id, { type: 'KEYBOARD_SHORTCUT', payload: { action: command } });
-    }
-  });
-});
+// Keyboard shortcuts have been removed to avoid conflicts with browser/system shortcuts.
+// Users interact via mouse: click buttons in the player or drag markers on the progress bar.

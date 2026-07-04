@@ -114,4 +114,49 @@ describe('YouTubeDetector', () => {
       cleanup(); // should not throw
     });
   });
+
+  describe('waitForPlayer', () => {
+    afterEach(() => {
+      // Clean up any lingering video elements from waitForPlayer tests
+      document.querySelectorAll('video.html5-main-video').forEach((v) => v.remove());
+    });
+
+    it('resolves immediately when video already in DOM', async () => {
+      const video = document.createElement('video');
+      video.classList.add('html5-main-video');
+      document.body.appendChild(video);
+
+      setLocation('https://www.youtube.com/watch?v=test123');
+      const detector = makeDetector();
+      const result = await detector.waitForPlayer(500);
+      expect(result).toBe(video);
+    });
+
+    it('resolves when video appears via mutation', async () => {
+      setLocation('https://www.youtube.com/watch?v=test123');
+      const detector = makeDetector();
+
+      const promise = detector.waitForPlayer(2000);
+
+      setTimeout(() => {
+        const video = document.createElement('video');
+        video.classList.add('html5-main-video');
+        document.body.appendChild(video);
+      }, 50);
+
+      const result = await promise;
+      expect(result).toBeInstanceOf(HTMLVideoElement);
+      expect(result.classList.contains('html5-main-video')).toBe(true);
+    });
+
+    it('rejects after timeout when no video appears', async () => {
+      // Ensure no video exists in DOM
+      document.querySelectorAll('video.html5-main-video').forEach((v) => v.remove());
+
+      setLocation('https://www.youtube.com/watch?v=test123');
+      const detector = makeDetector();
+
+      await expect(detector.waitForPlayer(100)).rejects.toThrow('Player not found within timeout');
+    });
+  });
 });

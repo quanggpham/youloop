@@ -45,3 +45,22 @@ export async function handleDeleteLoop(videoId: string): Promise<void> {
   delete store[videoId];
   await setStore(store);
 }
+
+// ── Extension enabled/disabled toggle ─────────────────
+
+const ENABLED_KEY = 'extensionEnabled';
+
+export async function handleGetEnabled(): Promise<boolean> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(ENABLED_KEY, (result) => {
+      const val = result[ENABLED_KEY];
+      resolve(val === undefined ? true : Boolean(val));
+    });
+  });
+}
+
+export async function handleSetEnabled(enabled: boolean): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [ENABLED_KEY]: enabled }, () => resolve());
+  });
+}
