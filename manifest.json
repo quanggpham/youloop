@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "YouLoop",
+  "name": "YouLoop — YouTube Video Looper",
+  "short_name": "YouLoop",
   "version": "1.0.0",
-  "description": "Loop any segment of a YouTube video seamlessly",
+  "description": "Loop any segment of a YouTube video seamlessly. Set A-B points and replay infinitely with one click.",
   "permissions": ["storage"],
   "host_permissions": ["*://*.youtube.com/*"],
   "content_scripts": [{
